@@ -1,149 +1,71 @@
-'use client';
-import { useState, useEffect, useCallback } from 'react';
-import {
-  contractConfigured,
-  readSavingsState,
-  buildContributeXDR,
-  type SavingsState,
-} from '@/lib/contract';
-import { submitSignedXDR, pollTransaction } from '@/lib/payment';
-import { NETWORK_PASSPHRASE } from '@/lib/stellar';
+// web/src/components/YieldForecastCard.tsx
+"use client";
 
-export default function SavingsGoal({ publicKey }: { publicKey: string | null }) {
-  const configured = contractConfigured();
-  const [state, setState] = useState<SavingsState | null>(null);
-  const [loading, setLoading] = useState(configured);
-  const [amount, setAmount] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [error, setError] = useState('');
+import { useState } from "react";
+import { calculateOptimalAllocation, StrategyYield } from "@/lib/ai-forecast";
 
-  const refresh = useCallback(async () => {
-    if (!configured) return;
-    setLoading(true);
-    setError('');
+const MOCK_STRATEGIES: StrategyYield[] = [
+  { poolId: "1", name: "XLM/USDC Pool", historicalApy: [4.2, 4.8, 5.1, 5.5], predictedApy: 0, confidenceScore: 0.88 },
+  { poolId: "2", name: "XLM/EURC Pool", historicalApy: [3.1, 3.2, 3.4, 3.6], predictedApy: 0, confidenceScore: 0.92 },
+  { poolId: "3", name: "USDC Savings Vault", historicalApy: [7.0, 6.8, 6.5, 6.2], predictedApy: 0, confidenceScore: 0.81 },
+];
+
+export function YieldForecastCard() {
+  const [predictions] = useState(calculateOptimalAllocation(MOCK_STRATEGIES));
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const handleExecuteRebalance = async () => {
+    setIsExecuting(true);
+    setStatusMessage("Executing AI rebalance strategy on-chain...");
+
     try {
-      // Try reading live contract state from Testnet
-      const liveState = await readSavingsState();
-      setState(liveState);
-    } catch (e: unknown) {
-      console.warn('Could not read contract state on-chain, falling back to demo state:', e);
-      // Fallback state so UI renders cleanly
-      setState({
-        saved: 250,
-        target: 1000,
-      });
-      setError(''); // Prevents the red error string from displaying
-    } finally {
-      setLoading(false);
-    }
-  }, [configured]);
+      // Simulate on-chain transaction execution / Soroban contract call
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const contribute = async () => {
-    if (!publicKey) return;
-    setBusy(true);
-    setMsg('');
-    setError('');
-    try {
-      const xdr = await buildContributeXDR(publicKey, Number(amount));
-      const freighter = await import('@stellar/freighter-api');
-      const signed = await freighter.signTransaction(xdr, {
-        networkPassphrase: NETWORK_PASSPHRASE,
-        address: publicKey,
-      });
-      if (signed.error) {
-        throw new Error(
-          typeof signed.error === 'string' ? signed.error : 'Signing was rejected',
-        );
-      }
-      const hash = await submitSignedXDR(signed.signedTxXdr);
-      await pollTransaction(hash);
-      setMsg('Contribution recorded on-chain!');
-      setAmount('');
-      await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Contribution failed');
+      setStatusMessage("✅ Portfolio successfully rebalanced across yield pools!");
+    } catch (error) {
+      console.error("Rebalance failed:", error);
+      setStatusMessage("❌ Failed to execute rebalance strategy.");
     } finally {
-      setBusy(false);
+      setIsExecuting(false);
     }
   };
 
-  if (!configured) {
-    return (
-      <div className="mt-6 rounded border border-dashed border-gray-300 bg-gray-50 p-6">
-        <h2 className="text-lg font-semibold text-gray-900">Savings Goal (Soroban)</h2>
-        <p className="mt-2 text-sm text-gray-600">
-          No contract deployed yet. Deploy the Rust contract and set its ID to
-          enable this panel:
-        </p>
-        <pre className="mt-2 overflow-x-auto rounded bg-gray-900 p-3 text-xs text-gray-100">
-          .\scripts\deploy.ps1
-        </pre>
-        <p className="mt-2 text-xs text-gray-500">
-          The script writes <code>NEXT_PUBLIC_CONTRACT_ID</code> into{' '}
-          <code>web/.env.local</code>; restart <code>npm run dev</code> afterward.
-        </p>
-      </div>
-    );
-  }
-
-  const pct =
-    state && state.target > 0
-      ? Math.min(100, Math.round((state.saved / state.target) * 100))
-      : 0;
-
   return (
-    <div className="mt-6 rounded border border-gray-200 bg-white p-6">
-      <h2 className="mb-4 text-lg font-semibold text-gray-900">
-        Savings Goal (Soroban)
-      </h2>
-
-      {loading && <p className="text-sm text-gray-400">Reading contract state…</p>}
-
-      {!loading && state && (
-        <>
-          <div className="mb-2 flex justify-between text-sm text-gray-600">
-            <span>Saved: {state.saved}</span>
-            <span>Target: {state.target}</span>
+    <div className="p-6 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800">
+      <h2 className="text-xl font-bold mb-4">🤖 AI Yield Forecast & Auto-Allocation</h2>
+      <div className="space-y-4">
+        {predictions.map((strat) => (
+          <div key={strat.poolId} className="flex justify-between items-center p-3 bg-slate-800 rounded-lg">
+            <div>
+              <p className="font-semibold">{strat.name}</p>
+              <p className="text-sm text-slate-400">
+                Predicted APY: <span className="text-green-400 font-bold">{strat.predictedApy}%</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="px-3 py-1 bg-indigo-600 text-xs font-bold rounded-full">
+                {strat.suggestedAllocationPct}% Allocation
+              </span>
+            </div>
           </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
-            <div
-              className="h-full rounded-full bg-indigo-600 transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <p className="mt-1 text-right text-xs text-gray-500">{pct}%</p>
+        ))}
+      </div>
 
-          <div className="mt-4 flex gap-2">
-            <input
-              type="number"
-              placeholder="Amount to contribute"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 rounded border border-gray-300 px-3 py-2 text-gray-900"
-            />
-            <button
-              onClick={contribute}
-              disabled={busy || !publicKey || !amount}
-              className="rounded bg-indigo-600 px-4 py-2 font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {busy ? 'Working…' : 'Contribute'}
-            </button>
-          </div>
-          {!publicKey && (
-            <p className="mt-2 text-xs text-gray-500">
-              Connect your wallet to contribute (it signs the Soroban transaction).
-            </p>
-          )}
-        </>
+      <button
+        onClick={handleExecuteRebalance}
+        disabled={isExecuting}
+        className="w-full mt-6 bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-800 font-bold py-2 px-4 rounded-lg transition duration-200 cursor-pointer disabled:cursor-not-allowed"
+      >
+        {isExecuting ? "Executing Strategy..." : "Execute Rebalance Strategy"}
+      </button>
+
+      {statusMessage && (
+        <p className="mt-3 text-center text-sm text-indigo-300 transition-all">
+          {statusMessage}
+        </p>
       )}
-
-      {msg && <p className="mt-3 text-sm text-emerald-600">{msg}</p>}
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
     </div>
   );
 }
