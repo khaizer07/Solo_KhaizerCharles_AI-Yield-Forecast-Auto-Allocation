@@ -30,7 +30,39 @@ pub enum Error {
     NotInitialized = 2,
     InvalidAmount = 3,
 }
+// contracts/savings-goal/src/lib.rs
+#![no_std]
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Map, Symbol};
 
+const ALLOCATIONS: Symbol = symbol_short!("ALLOC");
+
+#[contract]
+pub struct YieldVault;
+
+#[contractimpl]
+impl YieldVault {
+    /// Update target allocations predicted by the AI model
+    pub fn update_allocation(env: Env, admin: Address, allocations: Map<Symbol, u32>) {
+        admin.require_auth();
+        
+        // Ensure total percentage allocation equals 100%
+        let mut total: u32 = 0;
+        for (_, pct) in allocations.iter() {
+            total += pct;
+        }
+        assert_eq!(total, 100, "Allocations must sum up to 100%");
+
+        env.storage().instance().set(&ALLOCATIONS, &allocations);
+    }
+
+    /// Retrieve the current AI-predicted optimal allocations
+    pub fn get_allocations(env: Env) -> Map<Symbol, u32> {
+        env.storage()
+            .instance()
+            .get(&ALLOCATIONS)
+            .unwrap_or(Map::new(&env))
+    }
+}
 #[contract]
 pub struct SavingsGoalContract;
 
